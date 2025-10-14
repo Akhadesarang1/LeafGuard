@@ -75,7 +75,7 @@ Generate the personalized, engaging recommendation based on the above instructio
     logging.info("Generating recommendation for plant type: %s", plant_type)
     try:
         # Use the fully qualified model name with the "models/" prefix.
-        model = genai.GenerativeModel("models/gemini-1.5-flash")
+        model = genai.GenerativeModel("models/gemini-2.5-flash")
         response = model.generate_content(prompt)
         if hasattr(response, 'text') and response.text:
             logging.info("Recommendation generated successfully.")
