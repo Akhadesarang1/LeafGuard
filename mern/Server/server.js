@@ -1,4 +1,6 @@
+
 // server.js
+require("dotenv").config();
 const express       = require("express");
 const mongoose      = require("mongoose");
 const cors          = require("cors");
@@ -10,7 +12,7 @@ let sharp;
 try {
   sharp = require("sharp");
 } catch (e) {
-  console.warn("Sharp module not found; image resizing disabled.");
+  console.warn("⚠️ Sharp module not found; image resizing disabled.");
   sharp = null;
 }
 const axios         = require("axios");
@@ -19,30 +21,37 @@ const bcrypt        = require("bcrypt");
 const path          = require("path");
 const fs            = require("fs");
 
-// Config
-const CLIENT_URL    = "https://mern-test-client.onrender.com";
-const MONGODB_URI   = "mongodb+srv://myAppUser:890iopjklnm@plantdiseasedetection.uhd0o.mongodb.net/?retryWrites=true&w=majority&appName=Plantdiseasedetection";
-const FLASK_URL     = "https://predict-app-mawg.onrender.com";
-const GEMINI_URL    = "https://agent-app.onrender.com";
-const JWT_SECRET    = "your_jwt_secret_here";
-const JWT_EXPIRES_IN= "1h";
+// Load environment variables
+const CLIENT_URL    = process.env.CLIENT_URL;
+const MONGODB_URI   = process.env.MONGO_URI;
+const FLASK_URL     = process.env.FLASK_URL;
+const GEMINI_URL    = process.env.GEMINI_URL;
+const JWT_SECRET    = process.env.JWT_SECRET || "default_secret";
+const JWT_EXPIRES_IN= process.env.JWT_EXPIRES_IN || "1h";
 const PORT          = process.env.PORT || 5000;
 const UPLOAD_DIR    = path.join(__dirname, "uploads");
 
 // Ensure uploads folder
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR);
 
-// Connect MongoDB
-mongoose.connect(MONGODB_URI)
-  .then(() => console.log("✅ MongoDB connected"))
-  .catch(err => {
-    console.error("❌ MongoDB error:", err);
-    process.exit(1);
-  });
+// Connect MongoDB with retry
+const connectDB = async () => {
+  try {
+    await mongoose.connect(MONGODB_URI, {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+    });
+    console.log("✅ MongoDB connected successfully");
+  } catch (err) {
+    console.error("❌ MongoDB connection failed, retrying in 5s...");
+    setTimeout(connectDB, 5000);
+  }
+};
+connectDB();
 
 const app = express();
 
-// Debug: log incoming headers
+// Debug headers (optional)
 app.use((req, res, next) => {
   console.log("Incoming Headers:", req.headers);
   next();
@@ -53,28 +62,30 @@ app.use(compression());
 app.use(morgan("combined"));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(cors({
-  origin: CLIENT_URL,
-  methods: ["GET","POST","PUT","PATCH","DELETE","OPTIONS"],
-  credentials: true,
-  allowedHeaders: ["Content-Type","Authorization"]
-}));
+app.use(
+  cors({
+    origin: CLIENT_URL,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    credentials: true,
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
+);
 app.options("*", cors());
 
-// Multer (disk storage)
+// Multer storage
 const storage = multer.diskStorage({
   destination: UPLOAD_DIR,
   filename: (req, file, cb) => {
-    const id = `${Date.now()}-${Math.round(Math.random()*1e9)}`;
+    const id = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
     cb(null, id + path.extname(file.originalname));
-  }
+  },
 });
 const upload = multer({
   storage,
   limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    cb(file.mimetype.startsWith("image/") ? null : new Error("Only images"), true);
-  }
+    cb(file.mimetype.startsWith("image/") ? null : new Error("Only images allowed"), true);
+  },
 });
 
 // JWT middleware
@@ -82,58 +93,65 @@ const authenticate = (req, res, next) => {
   const header = req.headers.authorization;
   if (!header) return res.status(401).json({ message: "No token provided" });
   const token = header.startsWith("Bearer ") ? header.split(" ")[1] : header;
-  if (!token) return res.status(401).json({ message: "Invalid token format" });
   jwt.verify(token, JWT_SECRET, (err, decoded) => {
-    if (err) {
+    if (err)
       return res.status(401).json({ message: err.name === "TokenExpiredError" ? "Token expired" : "Invalid token" });
-    }
     req.userId = decoded.userId;
     next();
   });
 };
 
 // User schema
-const userSchema = new mongoose.Schema({
-  username: { type: String, required: true },
-  email:    { type: String, unique: true, required: true },
-  password: { type: String, required: true },
-  history: [{
-    plantType:     String,
-    status:        String,
-    recommendation:String,
-    imageUrl:      String,
-    thumbnailUrl:  String,
-    analyzedAt:    { type: Date, default: Date.now }
-  }]
-}, { timestamps: true });
-const User = mongoose.model("User", userSchema);
+const userSchema = new mongoose.Schema(
+  {
+    username: { type: String, required: true },
+    email: { type: String, unique: true, required: true },
+    password: { type: String, required: true },
+    history: [
+      {
+        plantType: String,
+        status: String,
+        recommendation: String,
+        imageUrl: String,
+        thumbnailUrl: String,
+        analyzedAt: { type: Date, default: Date.now },
+      },
+    ],
+  },
+  { timestamps: true }
+);
+
+// Store all users in "LeafGuard" collection
+const User = mongoose.model("LeafGuard", userSchema, "LeafGuard");
 
 // Routes
 app.get("/", (_, res) => res.json({ status: "ok" }));
 
+// Register
 app.post("/register", async (req, res, next) => {
   try {
     const { username, email, password } = req.body;
     if (![username, email, password].every(Boolean))
       return res.status(400).json({ message: "Missing fields" });
     if (await User.exists({ email }))
-      return res.status(409).json({ message: "Email in use" });
+      return res.status(409).json({ message: "Email already in use" });
     const hash = await bcrypt.hash(password, 12);
     await new User({ username, email, password: hash }).save();
-    res.status(201).json({ message: "Registered" });
+    res.status(201).json({ message: "User registered successfully" });
   } catch (e) {
     next(e);
   }
 });
 
+// Login
 app.post("/login", async (req, res, next) => {
   try {
     const { email, password } = req.body;
     if (![email, password].every(Boolean))
-      return res.status(400).json({ message: "Missing creds" });
+      return res.status(400).json({ message: "Missing credentials" });
     const user = await User.findOne({ email });
     if (!user || !(await bcrypt.compare(password, user.password)))
-      return res.status(401).json({ message: "Invalid creds" });
+      return res.status(401).json({ message: "Invalid credentials" });
     const token = jwt.sign({ userId: user._id }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
     res.json({ token });
   } catch (e) {
@@ -141,6 +159,7 @@ app.post("/login", async (req, res, next) => {
   }
 });
 
+// Analyze
 app.post("/analyze", authenticate, upload.single("image"), async (req, res, next) => {
   try {
     const { plantType, waterFreq, language } = req.body;
@@ -151,59 +170,49 @@ app.post("/analyze", authenticate, upload.single("image"), async (req, res, next
     let buf = fs.readFileSync(filePath);
 
     if (sharp) {
-      buf = await sharp(buf)
-        .resize(800, 800, { fit: "inside" })
-        .jpeg({ quality: 80 })
-        .toBuffer();
+      buf = await sharp(buf).resize(800, 800, { fit: "inside" }).jpeg({ quality: 80 }).toBuffer();
       fs.writeFileSync(filePath, buf);
     }
 
     let thumb = null;
     if (sharp) {
       thumb = `thumb-${req.file.filename}`;
-      await sharp(buf)
-        .resize(200, 200, { fit: "cover" })
-        .toFile(path.join(UPLOAD_DIR, thumb));
+      await sharp(buf).resize(200, 200, { fit: "cover" }).toFile(path.join(UPLOAD_DIR, thumb));
     }
 
-    // ——— Prediction call with timeout + error handling ———
     let status;
     try {
-      const predictResp = await axios.post(
-        `${FLASK_URL}/predict`,
-        buf,
-        {
-          headers: { "Content-Type": "application/octet-stream" },
-          timeout: 20_000  // 20s timeout
-        }
-      );
+      const predictResp = await axios.post(`${FLASK_URL}/predict`, buf, {
+        headers: { "Content-Type": "application/octet-stream" },
+        timeout: 20000,
+      });
       const data = predictResp.data;
-      status = typeof data === "string"
-        ? (data.match(/Prediction:\s*(\w+)/)?.[1] || "Unknown")
-        : (data.prediction || data.status || "Unknown");
+      status =
+        typeof data === "string"
+          ? data.match(/Prediction:\s*(\w+)/)?.[1] || "Unknown"
+          : data.prediction || data.status || "Unknown";
     } catch (err) {
-      console.error("❌ Predict API error:", err.message);
+      console.error("❌ Prediction API error:", err.message);
       return res.status(502).json({ message: "Prediction service unavailable" });
     }
 
-    // Recommendation (still best-effort)
     let recommendation = "Unavailable";
     try {
       const rec = await axios.post(
         `${GEMINI_URL}/recommend`,
         { status, plantType, waterFreq: +waterFreq, language },
-        { timeout: 20_000 }
+        { timeout: 20000 }
       );
       recommendation = rec.data.recommendation;
     } catch (e) {
       console.warn("⚠️ Recommendation API failed:", e.message);
     }
 
-    const imageUrl     = `/uploads/${req.file.filename}`;
+    const imageUrl = `/uploads/${req.file.filename}`;
     const thumbnailUrl = thumb ? `/uploads/${thumb}` : imageUrl;
 
     await User.findByIdAndUpdate(req.userId, {
-      $push: { history: { plantType, status, recommendation, imageUrl, thumbnailUrl } }
+      $push: { history: { plantType, status, recommendation, imageUrl, thumbnailUrl } },
     });
 
     res.json({ status, recommendation, imageUrl, thumbnailUrl });
@@ -212,58 +221,61 @@ app.post("/analyze", authenticate, upload.single("image"), async (req, res, next
   }
 });
 
+// History
 app.get("/history", authenticate, async (req, res, next) => {
   try {
-    const page  = Math.max(+req.query.page || 1, 1);
+    const page = Math.max(+req.query.page || 1, 1);
     const limit = Math.min(+req.query.limit || 10, 100);
-    const skip  = (page - 1) * limit;
+    const skip = (page - 1) * limit;
 
     const [doc] = await User.aggregate([
-      { $match: { _id: mongoose.Types.ObjectId(req.userId) } },
+      { $match: { _id: new mongoose.Types.ObjectId(req.userId) } },
       {
         $project: {
           username: 1,
-          total:    { $size: "$history" },
-          history:  { $slice: [ "$history", skip, limit ] }
-        }
-      }
+          total: { $size: "$history" },
+          history: { $slice: ["$history", skip, limit] },
+        },
+      },
     ]);
     if (!doc) return res.status(404).json({ message: "Not found" });
 
     res.json({
       username: doc.username,
-      history:  doc.history,
+      history: doc.history,
       page,
       limit,
       total: doc.total,
-      pages: Math.ceil(doc.total / limit)
+      pages: Math.ceil(doc.total / limit),
     });
   } catch (e) {
     next(e);
   }
 });
 
-// Error handlers
+// Error handling
 app.use((err, req, res, _) => {
-  console.error(err);
-  res.status(500).json({ message: err.message || "Error" });
+  console.error("❌ Error:", err);
+  res.status(500).json({ message: err.message || "Server error" });
 });
-process.on("uncaughtException", e => {
-  console.error("Uncaught:", e);
+process.on("uncaughtException", (e) => {
+  console.error("Uncaught Exception:", e);
   process.exit(1);
 });
-process.on("unhandledRejection", e => {
-  console.error("Rejection:", e);
+process.on("unhandledRejection", (e) => {
+  console.error("Unhandled Rejection:", e);
   process.exit(1);
 });
 
-// Start
-const server = app.listen(PORT, "0.0.0.0", () => console.log(`🚀 Server on ${PORT}`));
-server.on("error", e => {
+// Start server
+const server = app.listen(PORT, "0.0.0.0", () =>
+  console.log(`🚀 Server running on port ${PORT}`)
+);
+server.on("error", (e) => {
   if (e.code === "EADDRINUSE") {
-    console.error(`Port ${PORT} busy`);
+    console.error(`Port ${PORT} is already in use`);
     process.exit(1);
   }
-  console.error("Server err", e);
+  console.error("Server error:", e);
   process.exit(1);
 });
