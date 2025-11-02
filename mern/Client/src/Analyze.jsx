@@ -99,8 +99,8 @@ const Analyze = () => {
       return;
     }
 
-    const token = localStorage.getItem("token");
-    if (!token) {
+const token = localStorage.getItem("token");
+    if     (!token) {
       setError("You must be logged in to analyze.");
       return;
     }
@@ -121,7 +121,7 @@ const Analyze = () => {
         {
           headers: {
             "Content-Type": "multipart/form-data",
-            Authorization: token,
+            Authorization: `Bearer ${token}`,
           },
         }
       );
