@@ -1,222 +1,269 @@
-// ======== server.js ========
-// ✅ CommonJS Version - Complete, Stable, and Production-ready
+// server.js
+const express       = require("express");
+const mongoose      = require("mongoose");
+const cors          = require("cors");
+const helmet        = require("helmet");
+const compression   = require("compression");
+const morgan        = require("morgan");
+const multer        = require("multer");
+let sharp;
+try {
+  sharp = require("sharp");
+} catch (e) {
+  console.warn("Sharp module not found; image resizing disabled.");
+  sharp = null;
+}
+const axios         = require("axios");
+const jwt           = require("jsonwebtoken");
+const bcrypt        = require("bcrypt");
+const path          = require("path");
+const fs            = require("fs");
 
-const express = require("express");
-const mongoose = require("mongoose");
-const cors = require("cors");
-const jwt = require("jsonwebtoken");
-const bcrypt = require("bcryptjs");
-const multer = require("multer");
-const axios = require("axios");
-const morgan = require("morgan");
-const compression = require("compression");
-const helmet = require("helmet");
+// Config
+const CLIENT_URL    = "https://mern-test-client.onrender.com";
+const MONGODB_URI   = "mongodb+srv://myAppUser:890iopjklnm@plantdiseasedetection.uhd0o.mongodb.net/?retryWrites=true&w=majority&appName=Plantdiseasedetection";
+const FLASK_URL     = "https://predict-app-mawg.onrender.com";
+const GEMINI_URL    = "https://agent-app.onrender.com";
+const JWT_SECRET    = "your_jwt_secret_here";
+const JWT_EXPIRES_IN= "1h";
+const PORT          = process.env.PORT || 5000;
+const UPLOAD_DIR    = path.join(__dirname, "uploads");
 
-// =======================
-// ✅ Hardcoded Configuration
-// =======================
-const PORT = process.env.PORT || 5000;
+// Ensure uploads folder
+if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR);
 
-// 🌱 Hardcoded URLs (private repo safe)
-const MONGO_URI = "mongodb+srv://myAppUser:890iopjklnm@plantdiseasedetection.uhd0o.mongodb.net/LeafGuard?retryWrites=true&w=majority&appName=Plantdiseasedetection";
-const CLIENT_URL = "https://mern-test-client.onrender.com";
-const FLASK_URL = "https://predict-app-mawg.onrender.com";
-const GEMINI_URL = "https://agent-app.onrender.com";
+// Connect MongoDB
+mongoose.connect(MONGODB_URI)
+  .then(() => console.log("✅ MongoDB connected"))
+  .catch(err => {
+    console.error("❌ MongoDB error:", err);
+    process.exit(1);
+  });
 
-// 🔐 JWT Secret
-const JWT_SECRET = "super_secret_key_leafguard_890iopjklnm";
-
-// =======================
-// ✅ App Initialization
-// =======================
 const app = express();
-app.use(express.json());
-app.use(cors({ origin: CLIENT_URL, credentials: true }));
-app.use(morgan("dev"));
-app.use(compression());
-app.use(helmet());
 
-// =======================
-// ✅ MongoDB Connection (with retry)
-// =======================
-const connectDB = async (retries = 5) => {
-  console.log("🕓 Attempting MongoDB connection...");
-  try {
-    await mongoose.connect(MONGO_URI);
-    console.log("✅ MongoDB Connected Successfully");
-  } catch (err) {
-    console.error("❌ MongoDB connection failed, retrying in 5s...");
-    if (retries > 0) setTimeout(() => connectDB(retries - 1), 5000);
-    else console.error("❌ MongoDB connection permanently failed:", err.message);
-  }
-};
-connectDB();
-
-// =======================
-// ✅ Mongoose Models
-// =======================
-const userSchema = new mongoose.Schema({
-  name: String,
-  email: { type: String, unique: true },
-  password: String,
-  history: [
-    {
-      imageUrl: String,
-      result: String,
-      recommendation: String,
-      date: { type: Date, default: Date.now }
-    }
-  ]
+// Debug: log incoming headers
+app.use((req, res, next) => {
+  console.log("Incoming Headers:", req.headers);
+  next();
 });
 
+app.use(helmet());
+app.use(compression());
+app.use(morgan("combined"));
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(cors({
+  origin: CLIENT_URL,
+  methods: ["GET","POST","PUT","PATCH","DELETE","OPTIONS"],
+  credentials: true,
+  allowedHeaders: ["Content-Type","Authorization"]
+}));
+app.options("*", cors());
+
+// Multer (disk storage)
+const storage = multer.diskStorage({
+  destination: UPLOAD_DIR,
+  filename: (req, file, cb) => {
+    const id = `${Date.now()}-${Math.round(Math.random()*1e9)}`;
+    cb(null, id + path.extname(file.originalname));
+  }
+});
+const upload = multer({
+  storage,
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    cb(file.mimetype.startsWith("image/") ? null : new Error("Only images"), true);
+  }
+});
+
+// JWT middleware
+const authenticate = (req, res, next) => {
+  const header = req.headers.authorization;
+  if (!header) return res.status(401).json({ message: "No token provided" });
+  const token = header.startsWith("Bearer ") ? header.split(" ")[1] : header;
+  if (!token) return res.status(401).json({ message: "Invalid token format" });
+  jwt.verify(token, JWT_SECRET, (err, decoded) => {
+    if (err) {
+      return res.status(401).json({ message: err.name === "TokenExpiredError" ? "Token expired" : "Invalid token" });
+    }
+    req.userId = decoded.userId;
+    next();
+  });
+};
+
+// User schema
+const userSchema = new mongoose.Schema({
+  username: { type: String, required: true },
+  email:    { type: String, unique: true, required: true },
+  password: { type: String, required: true },
+  history: [{
+    plantType:     String,
+    status:        String,
+    recommendation:String,
+    imageUrl:      String,
+    thumbnailUrl:  String,
+    analyzedAt:    { type: Date, default: Date.now }
+  }]
+}, { timestamps: true });
 const User = mongoose.model("User", userSchema);
 
-// =======================
-// ✅ Auth Middleware
-// =======================
-const authMiddleware = (req, res, next) => {
-  const token = req.header("Authorization")?.replace("Bearer ", "");
-  if (!token) return res.status(401).json({ error: "Access Denied. No Token Provided." });
+// Routes
+app.get("/", (_, res) => res.json({ status: "ok" }));
 
+app.post("/register", async (req, res, next) => {
   try {
-    const verified = jwt.verify(token, JWT_SECRET);
-    req.user = verified;
-    next();
-  } catch (err) {
-    console.log("⚠️ Invalid Token:", err.message);
-    return res.status(403).json({ error: "Invalid or expired token." });
-  }
-};
-
-// =======================
-// ✅ Multer Setup for Image Upload
-// =======================
-const storage = multer.memoryStorage();
-const upload = multer({ storage });
-
-// =======================
-// ✅ Routes
-// =======================
-
-// Health route
-app.get("/health", (req, res) => res.json({ status: "OK", mongo: mongoose.connection.readyState }));
-
-// Signup
-app.post("/signup", async (req, res) => {
-  try {
-    const { name, email, password } = req.body;
-    const existing = await User.findOne({ email });
-    if (existing) return res.status(400).json({ error: "User already exists." });
-
-    const hashed = await bcrypt.hash(password, 10);
-    const user = new User({ name, email, password: hashed });
-    await user.save();
-    res.json({ message: "Signup successful" });
-  } catch (err) {
-    console.error("❌ Signup error:", err);
-    res.status(500).json({ error: "Internal Server Error" });
+    const { username, email, password } = req.body;
+    if (![username, email, password].every(Boolean))
+      return res.status(400).json({ message: "Missing fields" });
+    if (await User.exists({ email }))
+      return res.status(409).json({ message: "Email in use" });
+    const hash = await bcrypt.hash(password, 12);
+    await new User({ username, email, password: hash }).save();
+    res.status(201).json({ message: "Registered" });
+  } catch (e) {
+    next(e);
   }
 });
 
-// Login
-app.post("/login", async (req, res) => {
+app.post("/login", async (req, res, next) => {
   try {
     const { email, password } = req.body;
+    if (![email, password].every(Boolean))
+      return res.status(400).json({ message: "Missing creds" });
     const user = await User.findOne({ email });
-    if (!user) return res.status(400).json({ error: "Invalid credentials" });
-
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) return res.status(400).json({ error: "Invalid credentials" });
-
-    const token = jwt.sign({ id: user._id, email: user.email }, JWT_SECRET, { expiresIn: "1h" });
+    if (!user || !(await bcrypt.compare(password, user.password)))
+      return res.status(401).json({ message: "Invalid creds" });
+    const token = jwt.sign({ userId: user._id }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
     res.json({ token });
-  } catch (err) {
-    console.error("❌ Login error:", err);
-    res.status(500).json({ error: "Internal Server Error" });
+  } catch (e) {
+    next(e);
   }
 });
 
-// Analyze Image (Flask + Gemini)
-app.post("/analyze", authMiddleware, upload.single("image"), async (req, res) => {
+app.post("/analyze", authenticate, upload.single("image"), async (req, res, next) => {
   try {
-    if (!req.file) return res.status(400).json({ error: "No image provided" });
-
     const { plantType, waterFreq, language } = req.body;
-    console.log("📸 Received image for analysis");
+    if (![plantType, waterFreq].every(Boolean) || !req.file)
+      return res.status(400).json({ message: "Missing data or image" });
 
-    // Step 1: Send to Flask API
-    const flaskResponse = await axios.post(`${FLASK_URL}/predict`, {
-      image: req.file.buffer.toString("base64"),
-      plantType
-    });
-    const prediction = flaskResponse.data.prediction || "Unknown";
+    const filePath = path.join(UPLOAD_DIR, req.file.filename);
+    let buf = fs.readFileSync(filePath);
 
-    // Step 2: Get recommendation from Gemini Agent
-    const geminiResponse = await axios.post(`${GEMINI_URL}/recommend`, {
-      disease: prediction,
-      language,
-      waterFreq
-    });
-    const recommendation = geminiResponse.data.recommendation || "No recommendation available";
-
-    // Step 3: Save to user history
-    const user = await User.findById(req.user.id);
-    if (user) {
-      user.history.push({
-        imageUrl: "Image Uploaded via Analyze API",
-        result: prediction,
-        recommendation
-      });
-      await user.save();
+    if (sharp) {
+      buf = await sharp(buf)
+        .resize(800, 800, { fit: "inside" })
+        .jpeg({ quality: 80 })
+        .toBuffer();
+      fs.writeFileSync(filePath, buf);
     }
 
-    console.log(`✅ Analysis complete for user ${req.user.email}`);
-    res.json({ status: "success", prediction, recommendation });
-  } catch (err) {
-    console.error("❌ Analyze route error:", err.message);
-    res.status(500).json({ error: "Analysis failed" });
+    let thumb = null;
+    if (sharp) {
+      thumb = `thumb-${req.file.filename}`;
+      await sharp(buf)
+        .resize(200, 200, { fit: "cover" })
+        .toFile(path.join(UPLOAD_DIR, thumb));
+    }
+
+    // ——— Prediction call with timeout + error handling ———
+    let status;
+    try {
+      const predictResp = await axios.post(
+        `${FLASK_URL}/predict`,
+        buf,
+        {
+          headers: { "Content-Type": "application/octet-stream" },
+          timeout: 20_000  // 20s timeout
+        }
+      );
+      const data = predictResp.data;
+      status = typeof data === "string"
+        ? (data.match(/Prediction:\s*(\w+)/)?.[1] || "Unknown")
+        : (data.prediction || data.status || "Unknown");
+    } catch (err) {
+      console.error("❌ Predict API error:", err.message);
+      return res.status(502).json({ message: "Prediction service unavailable" });
+    }
+
+    // Recommendation (still best-effort)
+    let recommendation = "Unavailable";
+    try {
+      const rec = await axios.post(
+        `${GEMINI_URL}/recommend`,
+        { status, plantType, waterFreq: +waterFreq, language },
+        { timeout: 20_000 }
+      );
+      recommendation = rec.data.recommendation;
+    } catch (e) {
+      console.warn("⚠️ Recommendation API failed:", e.message);
+    }
+
+    const imageUrl     = `/uploads/${req.file.filename}`;
+    const thumbnailUrl = thumb ? `/uploads/${thumb}` : imageUrl;
+
+    await User.findByIdAndUpdate(req.userId, {
+      $push: { history: { plantType, status, recommendation, imageUrl, thumbnailUrl } }
+    });
+
+    res.json({ status, recommendation, imageUrl, thumbnailUrl });
+  } catch (e) {
+    next(e);
   }
 });
 
-// Fetch History (Paginated)
-app.get("/history", authMiddleware, async (req, res) => {
+app.get("/history", authenticate, async (req, res, next) => {
   try {
-    const { page = 1, limit = 10 } = req.query;
-    const user = await User.findById(req.user.id);
+    const page  = Math.max(+req.query.page || 1, 1);
+    const limit = Math.min(+req.query.limit || 10, 100);
+    const skip  = (page - 1) * limit;
 
-    if (!user) return res.status(404).json({ error: "User not found" });
-
-    const total = user.history.length;
-    const start = (page - 1) * limit;
-    const end = start + parseInt(limit);
+    const [doc] = await User.aggregate([
+      { $match: { _id: mongoose.Types.ObjectId(req.userId) } },
+      {
+        $project: {
+          username: 1,
+          total:    { $size: "$history" },
+          history:  { $slice: [ "$history", skip, limit ] }
+        }
+      }
+    ]);
+    if (!doc) return res.status(404).json({ message: "Not found" });
 
     res.json({
-      name: user.name,
-      total,
-      page: parseInt(page),
-      pages: Math.ceil(total / limit),
-      history: user.history.slice(start, end)
+      username: doc.username,
+      history:  doc.history,
+      page,
+      limit,
+      total: doc.total,
+      pages: Math.ceil(doc.total / limit)
     });
-  } catch (err) {
-    console.error("❌ History fetch error:", err);
-    res.status(500).json({ error: "Failed to fetch history" });
+  } catch (e) {
+    next(e);
   }
 });
 
-// Default route
-app.get("/", (req, res) => {
-  res.send("🌿 LeafGuard Backend Running Successfully!");
+// Error handlers
+app.use((err, req, res, _) => {
+  console.error(err);
+  res.status(500).json({ message: err.message || "Error" });
+});
+process.on("uncaughtException", e => {
+  console.error("Uncaught:", e);
+  process.exit(1);
+});
+process.on("unhandledRejection", e => {
+  console.error("Rejection:", e);
+  process.exit(1);
 });
 
-// =======================
-// ✅ Start Server
-// =======================
-app.listen(PORT, () => {
-  console.log("==========================================");
-  console.log(`🚀 Server running on port: ${PORT}`);
-  console.log(`🌍 Access: http://localhost:${PORT}/`);
-  console.log(`🧠 Flask API: ${FLASK_URL}`);
-  console.log(`🤖 Gemini Agent: ${GEMINI_URL}`);
-  console.log(`💾 MongoDB: Connected -> ${MONGO_URI.includes("mongodb+srv") ? "Atlas Cluster" : "Local DB"}`);
-  console.log("==========================================");
+// Start
+const server = app.listen(PORT, "0.0.0.0", () => console.log(`🚀 Server on ${PORT}`));
+server.on("error", e => {
+  if (e.code === "EADDRINUSE") {
+    console.error(`Port ${PORT} busy`);
+    process.exit(1);
+  }
+  console.error("Server err", e);
+  process.exit(1);
 });
