@@ -24,7 +24,7 @@ const CLIENT_URL     = "https://mern-test-client.onrender.com";
 const MONGODB_URI    = "mongodb+srv://myAppUser:890iopjklnm@plantdiseasedetection.uhd0o.mongodb.net/?retryWrites=true&w=majority&appName=Plantdiseasedetection";
 const FLASK_URL      = "https://predict-app-mawg.onrender.com";
 const GEMINI_URL     = "https://agent-app.onrender.com";
-const JWT_SECRET     = "your_jwt_secret_here";
+const JWT_SECRET     = "6uK5C3v9Hh2s1r+JqY8mQWb9N4ZtLkPqR3xT7fY2sVb6Lw8mA0cZtF1WqXy9eR0u";
 const JWT_EXPIRES_IN = "1h";
 const PORT           = process.env.PORT || 5000;
 const UPLOAD_DIR     = path.join(__dirname, "uploads");
