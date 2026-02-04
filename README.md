@@ -1,5 +1,6 @@
 🌿 LeafGuard
 AI-Powered Plant Disease Detection, Diagnosis, and Intelligent Treatment Guidance
+
 🔍 Overview
 
 LeafGuard is a full-stack AI system built to detect plant diseases from leaf images, analyze the condition, and generate clear, actionable treatment recommendations.
