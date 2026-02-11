@@ -1,6 +1,24 @@
 
 ---
 
+# ✅ **LeafGuard Badges (Copy-Paste Ready)**
+
+![React](https://img.shields.io/badge/Frontend-React_18-blue?style=for-the-badge\&logo=react)
+![Vite](https://img.shields.io/badge/Bundler-Vite-purple?style=for-the-badge\&logo=vite)
+![TailwindCSS](https://img.shields.io/badge/UI-TailwindCSS-38B2AC?style=for-the-badge\&logo=tailwindcss)
+![Node.js](https://img.shields.io/badge/Backend-Node.js-green?style=for-the-badge\&logo=node.js)
+![Express](https://img.shields.io/badge/API-Express-black?style=for-the-badge\&logo=express)
+![Python](https://img.shields.io/badge/Microservice-Python-yellow?style=for-the-badge\&logo=python)
+![Flask](https://img.shields.io/badge/Model_Service-Flask-lightgrey?style=for-the-badge\&logo=flask)
+![TensorFlow](https://img.shields.io/badge/DeepLearning-TensorFlow-orange?style=for-the-badge\&logo=tensorflow)
+![Gemini](https://img.shields.io/badge/AI-Google%20Gemini_1.5-orange?style=for-the-badge\&logo=google)
+![MongoDB](https://img.shields.io/badge/Database-MongoDB-darkgreen?style=for-the-badge\&logo=mongodb)
+![HuggingFace](https://img.shields.io/badge/ModelHosting-HuggingFace-yellow?style=for-the-badge\&logo=huggingface)
+![Architecture](https://img.shields.io/badge/Architecture-Microservices-6A1B9A?style=for-the-badge)
+![Status](https://img.shields.io/badge/Status-Production%20Ready-success?style=for-the-badge)
+
+---
+
 # 🌿 LeafGuard – AI-Powered Plant Disease Detection & Treatment Intelligence System
 
 LeafGuard is a fully engineered AI platform built to analyze plant leaf images, detect diseases with high precision, and deliver scientifically grounded treatment recommendations.
