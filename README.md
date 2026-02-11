@@ -1,7 +1,7 @@
 
 ---
 
-# ✅ **LeafGuard Badges (Copy-Paste Ready)**
+# **LeafGuard Badges (Copy-Paste Ready)**
 
 ![React](https://img.shields.io/badge/Frontend-React_18-blue?style=for-the-badge\&logo=react)
 ![Vite](https://img.shields.io/badge/Bundler-Vite-purple?style=for-the-badge\&logo=vite)
