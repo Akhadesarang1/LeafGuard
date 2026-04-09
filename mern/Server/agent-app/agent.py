@@ -4,7 +4,7 @@ from flask_cors import CORS
 import google.generativeai as genai
 import logging
 from googletrans import Translator
-import 
+import
  
 app = Flask(__name__)
 CORS(app)
