@@ -1,14 +1,13 @@
-
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import google.generativeai as genai
 import logging
 from googletrans import Translator
-import
+import os
 
 app = Flask(__name__)
 CORS(app)
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO) 
 
 # Load the Gemini API key from the environment variable
 API_KEY = os.environ.get("API_KEY")
