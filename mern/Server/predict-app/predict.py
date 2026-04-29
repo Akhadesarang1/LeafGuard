@@ -6,7 +6,7 @@ import traceback
 import logging
 
 from flask import Flask, request, jsonify
-from flask_cors import CORS 
+from flask_cors import CORS
 from PIL import Image, ImageOps
 
 from gradio_client import Client, handle_file
