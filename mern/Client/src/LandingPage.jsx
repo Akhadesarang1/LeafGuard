@@ -191,10 +191,6 @@ export default function LandingPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-emerald-50 to-emerald-200 text-gray-800 font-roboto relative">
       {/* SEO Meta Tags */}
-
-
-
-
 <Helmet>
   {/* Basic & Essential Meta Tags */}
   <meta charSet="utf-8" />
