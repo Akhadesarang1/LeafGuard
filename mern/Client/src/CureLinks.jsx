@@ -5,6 +5,7 @@ import { FaArrowLeft, FaChevronRight, FaInfoCircle } from "react-icons/fa";
 import { useNavigate, useParams } from "react-router-dom";
 import Slider from "react-slick";
 
+
 // Variants for the interactive container (image and info panel)
 const imageContainerVariants = {
   rest: { width: "100%" },
