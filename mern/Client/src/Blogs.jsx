@@ -3,6 +3,7 @@ import { ArrowLeft, Moon, RefreshCw, Sun } from "lucide-react";
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
+
 // Error Boundary Component to catch errors gracefully
 class ErrorBoundary extends React.Component {
   constructor(props) {
