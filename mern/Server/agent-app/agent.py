@@ -7,6 +7,7 @@ import os
 
 
 
+
 app = Flask(__name__)
 CORS(app)
 logging.basicConfig(level=logging.INFO) 
