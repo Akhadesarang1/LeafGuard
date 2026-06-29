@@ -1,8 +1,3 @@
-
-
-
-
-
 import axios from "axios";
 import { motion } from "framer-motion";
 import React, { useEffect, useRef, useState } from "react";
