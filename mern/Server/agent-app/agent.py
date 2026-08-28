@@ -5,7 +5,6 @@ import logging
 from googletrans import Translator
 import os
 
-
 app = Flask(__name__)
 CORS(app)
 logging.basicConfig(level=logging.INFO) 
